@@ -1,0 +1,1903 @@
+{
+  "cells": [
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "view-in-github",
+        "colab_type": "text"
+      },
+      "source": [
+        "<a href=\"https://colab.research.google.com/github/martinrosch/TextAnalytics/blob/main/notebook\" target=\"_parent\"><img src=\"https://colab.research.google.com/assets/colab-badge.svg\" alt=\"Open In Colab\"/></a>"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "T4 GPU\n",
+        "\n",
+        "High RAM"
+      ],
+      "metadata": {
+        "id": "EmK7ohauNn8t"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "# -*- coding: utf-8 -*-\n",
+        "\"\"\"\n",
+        "RAG Model with PDF Input and Gemma in Google Colab\n",
+        "\n",
+        "This notebook demonstrates how to build a simple Retrieval-Augmented\n",
+        "Generation (RAG) system. It takes a PDF file, processes its content,\n",
+        "and uses a Gemma model to answer questions based on that content.\n",
+        "\n",
+        "Instructions:\n",
+        "1. Upload your PDF file to your Colab session's file system.\n",
+        "   You can do this using the file explorer panel on the left side of Colab.\n",
+        "2. Update the `pdf_path` variable in the \"Load and Process PDF\" section\n",
+        "   to match the name of your uploaded PDF file.\n",
+        "3. Run each cell sequentially.\n",
+        "4. Enter your questions in the \"Ask Questions\" section.\n",
+        "\"\"\"\n"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/",
+          "height": 89
+        },
+        "id": "kYTIDz15Bnax",
+        "outputId": "8bfad87f-7114-481d-f4b3-b33e1c1e704b"
+      },
+      "execution_count": 1,
+      "outputs": [
+        {
+          "output_type": "execute_result",
+          "data": {
+            "text/plain": [
+              "'\\nRAG Model with PDF Input and Gemma in Google Colab\\n\\nThis notebook demonstrates how to build a simple Retrieval-Augmented\\nGeneration (RAG) system. It takes a PDF file, processes its content,\\nand uses a Gemma model to answer questions based on that content.\\n\\nInstructions:\\n1. Upload your PDF file to your Colab session\\'s file system.\\n   You can do this using the file explorer panel on the left side of Colab.\\n2. Update the `pdf_path` variable in the \"Load and Process PDF\" section\\n   to match the name of your uploaded PDF file.\\n3. Run each cell sequentially.\\n4. Enter your questions in the \"Ask Questions\" section.\\n'"
+            ],
+            "application/vnd.google.colaboratory.intrinsic+json": {
+              "type": "string"
+            }
+          },
+          "metadata": {},
+          "execution_count": 1
+        }
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Map Google drive - Check if GPU is avtivated"
+      ],
+      "metadata": {
+        "id": "ibHHzUALy9LY"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "# Map Google Drive\n",
+        "from google.colab import drive\n",
+        "drive.mount('/content/drive')\n",
+        "\n",
+        "gpu_info = !nvidia-smi\n",
+        "gpu_info = '\\n'.join(gpu_info)\n",
+        "if gpu_info.find('failed') >= 0:\n",
+        "  print('Not connected to a GPU')\n",
+        "else:\n",
+        "  print(gpu_info)"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "OcUC5LrszAfS",
+        "outputId": "e1f92c10-2e28-4c92-ef2c-8e50808fbf2e"
+      },
+      "execution_count": 6,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Mounted at /content/drive\n",
+            "Sun May  4 08:30:58 2025       \n",
+            "+-----------------------------------------------------------------------------------------+\n",
+            "| NVIDIA-SMI 550.54.15              Driver Version: 550.54.15      CUDA Version: 12.4     |\n",
+            "|-----------------------------------------+------------------------+----------------------+\n",
+            "| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |\n",
+            "| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |\n",
+            "|                                         |                        |               MIG M. |\n",
+            "|=========================================+========================+======================|\n",
+            "|   0  Tesla T4                       Off |   00000000:00:04.0 Off |                    0 |\n",
+            "| N/A   38C    P8              9W /   70W |       0MiB /  15360MiB |      0%      Default |\n",
+            "|                                         |                        |                  N/A |\n",
+            "+-----------------------------------------+------------------------+----------------------+\n",
+            "                                                                                         \n",
+            "+-----------------------------------------------------------------------------------------+\n",
+            "| Processes:                                                                              |\n",
+            "|  GPU   GI   CI        PID   Type   Process name                              GPU Memory |\n",
+            "|        ID   ID                                                               Usage      |\n",
+            "|=========================================================================================|\n",
+            "|  No running processes found                                                             |\n",
+            "+-----------------------------------------------------------------------------------------+\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Assign constants"
+      ],
+      "metadata": {
+        "id": "8K6bmJkgzZeA"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "# Path constant file\n",
+        "root_path = \"/content/drive/MyDrive/ZHAW/MAIN/TA/ml_project\"\n",
+        "sust_report_path = \"/content/drive/MyDrive/ZHAW/MAIN/TA/ml_project/sustainability_statements\"\n",
+        "\n",
+        "sust_report_abb = \"/content/drive/MyDrive/ZHAW/MAIN/TA/ml_project/sustainability_statements/ABB Sustainability Statement 2024.pdf\"\n",
+        "sust_report_komax = \"/content/drive/MyDrive/ZHAW/MAIN/TA/ml_project/sustainability_statements/2025-03-11-GB-Komax-sa-esg-report-2024-DE.pdf\""
+      ],
+      "metadata": {
+        "id": "TzIQiVOczc_9"
+      },
+      "execution_count": 7,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "# @title 1. Install Necessary Libraries\n",
+        "# Install required packages. Use 'faiss-gpu' if you have a GPU runtime.\n",
+        "# faiss-cpu\n",
+        "!pip install -q transformers datasets sentence-transformers pypdf torch accelerate faiss-cpu bitsandbytes"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "f7BIqEexBeth",
+        "outputId": "fb6c316c-1cd7-4da0-8931-ce72e6181a19"
+      },
+      "execution_count": 8,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "\u001b[?25l   \u001b[90m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m \u001b[32m0.0/491.4 kB\u001b[0m \u001b[31m?\u001b[0m eta \u001b[36m-:--:--\u001b[0m\r\u001b[2K   \u001b[91m━━━━━━━━━━━━━━━━━━━━━\u001b[0m\u001b[91m╸\u001b[0m\u001b[90m━━━━━━━━━━━━━━━━━━\u001b[0m \u001b[32m266.2/491.4 kB\u001b[0m \u001b[31m8.8 MB/s\u001b[0m eta \u001b[36m0:00:01\u001b[0m\r\u001b[2K   \u001b[90m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m \u001b[32m491.4/491.4 kB\u001b[0m \u001b[31m9.8 MB/s\u001b[0m eta \u001b[36m0:00:00\u001b[0m\n",
+            "\u001b[2K   \u001b[90m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m \u001b[32m302.3/302.3 kB\u001b[0m \u001b[31m33.7 MB/s\u001b[0m eta \u001b[36m0:00:00\u001b[0m\n",
+            "\u001b[2K   \u001b[90m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m \u001b[32m363.4/363.4 MB\u001b[0m \u001b[31m3.1 MB/s\u001b[0m eta \u001b[36m0:00:00\u001b[0m\n",
+            "\u001b[2K   \u001b[90m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m \u001b[32m13.8/13.8 MB\u001b[0m \u001b[31m115.9 MB/s\u001b[0m eta \u001b[36m0:00:00\u001b[0m\n",
+            "\u001b[2K   \u001b[90m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m \u001b[32m24.6/24.6 MB\u001b[0m \u001b[31m94.7 MB/s\u001b[0m eta \u001b[36m0:00:00\u001b[0m\n",
+            "\u001b[2K   \u001b[90m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m \u001b[32m883.7/883.7 kB\u001b[0m \u001b[31m69.6 MB/s\u001b[0m eta \u001b[36m0:00:00\u001b[0m\n",
+            "\u001b[2K   \u001b[90m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m \u001b[32m664.8/664.8 MB\u001b[0m \u001b[31m2.4 MB/s\u001b[0m eta \u001b[36m0:00:00\u001b[0m\n",
+            "\u001b[2K   \u001b[90m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m \u001b[32m211.5/211.5 MB\u001b[0m \u001b[31m5.0 MB/s\u001b[0m eta \u001b[36m0:00:00\u001b[0m\n",
+            "\u001b[2K   \u001b[90m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m \u001b[32m56.3/56.3 MB\u001b[0m \u001b[31m45.1 MB/s\u001b[0m eta \u001b[36m0:00:00\u001b[0m\n",
+            "\u001b[2K   \u001b[90m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m \u001b[32m127.9/127.9 MB\u001b[0m \u001b[31m20.6 MB/s\u001b[0m eta \u001b[36m0:00:00\u001b[0m\n",
+            "\u001b[2K   \u001b[90m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m \u001b[32m207.5/207.5 MB\u001b[0m \u001b[31m4.2 MB/s\u001b[0m eta \u001b[36m0:00:00\u001b[0m\n",
+            "\u001b[2K   \u001b[90m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m \u001b[32m21.1/21.1 MB\u001b[0m \u001b[31m96.9 MB/s\u001b[0m eta \u001b[36m0:00:00\u001b[0m\n",
+            "\u001b[2K   \u001b[90m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m \u001b[32m31.3/31.3 MB\u001b[0m \u001b[31m82.6 MB/s\u001b[0m eta \u001b[36m0:00:00\u001b[0m\n",
+            "\u001b[2K   \u001b[90m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m \u001b[32m76.1/76.1 MB\u001b[0m \u001b[31m33.9 MB/s\u001b[0m eta \u001b[36m0:00:00\u001b[0m\n",
+            "\u001b[2K   \u001b[90m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m \u001b[32m116.3/116.3 kB\u001b[0m \u001b[31m14.2 MB/s\u001b[0m eta \u001b[36m0:00:00\u001b[0m\n",
+            "\u001b[2K   \u001b[90m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m \u001b[32m193.6/193.6 kB\u001b[0m \u001b[31m24.1 MB/s\u001b[0m eta \u001b[36m0:00:00\u001b[0m\n",
+            "\u001b[2K   \u001b[90m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m \u001b[32m143.5/143.5 kB\u001b[0m \u001b[31m16.8 MB/s\u001b[0m eta \u001b[36m0:00:00\u001b[0m\n",
+            "\u001b[2K   \u001b[90m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\u001b[0m \u001b[32m194.8/194.8 kB\u001b[0m \u001b[31m22.2 MB/s\u001b[0m eta \u001b[36m0:00:00\u001b[0m\n",
+            "\u001b[?25h\u001b[31mERROR: pip's dependency resolver does not currently take into account all the packages that are installed. This behaviour is the source of the following dependency conflicts.\n",
+            "gcsfs 2025.3.2 requires fsspec==2025.3.2, but you have fsspec 2025.3.0 which is incompatible.\u001b[0m\u001b[31m\n",
+            "\u001b[0m"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "# !pip freeze > /content/requirements_v0.txt"
+      ],
+      "metadata": {
+        "id": "MwXUvxtGt4AR"
+      },
+      "execution_count": 9,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "# !pip install -r /content/requirements_v0.txt"
+      ],
+      "metadata": {
+        "id": "oPqBtZeQtDyl"
+      },
+      "execution_count": 10,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "# @title 2. Import Libraries\n",
+        "import os\n",
+        "import torch\n",
+        "from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig\n",
+        "from sentence_transformers import SentenceTransformer\n",
+        "import faiss\n",
+        "from pypdf import PdfReader\n",
+        "import numpy as np\n",
+        "import textwrap # For formatting the output nicely\n",
+        "from huggingface_hub import login\n",
+        "import pandas as pd\n",
+        "from IPython.display import Markdown\n",
+        "import textwrap"
+      ],
+      "metadata": {
+        "id": "ewT-5X-bBp_W"
+      },
+      "execution_count": 11,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "pd.options.display.float_format = '{:,.4f}'.format\n",
+        "pd.set_option('display.max_columns', None)"
+      ],
+      "metadata": {
+        "id": "pF0BoR7czjbS"
+      },
+      "execution_count": 12,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "# --- Hugging Face Login ---\n",
+        "# You can either set the HUGGINGFACE_TOKEN environment variable\n",
+        "# or use notebook_login() which will prompt you.\n",
+        "try:\n",
+        "    # Attempt to get token from Colab secrets (recommended)\n",
+        "    from google.colab import userdata\n",
+        "    hf_token = userdata.get('HF_TOKEN')\n",
+        "    if hf_token:\n",
+        "        print(\"Logging in using Colab secret 'HF_TOKEN'\")\n",
+        "        login(token=hf_token)\n",
+        "    else:\n",
+        "        print(\"HF_TOKEN secret not found. Using notebook_login().\")\n",
+        "        from huggingface_hub import notebook_login\n",
+        "        notebook_login()\n",
+        "except ImportError:\n",
+        "    print(\"Not in Colab environment or google.colab unavailable. Using notebook_login().\")\n",
+        "    from huggingface_hub import notebook_login\n",
+        "    notebook_login()\n"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "WE1Gbe9oExtw",
+        "outputId": "48f06acf-44bd-4a37-a1a1-409e170c03b3"
+      },
+      "execution_count": 13,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Logging in using Colab secret 'HF_TOKEN'\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "## 3. Configuration and Model Setup"
+      ],
+      "metadata": {
+        "id": "ho_hfGeRsYhC"
+      }
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "```\n",
+        "Recommended Embedding Models for RAG\n",
+        "'all-mpnet-base-v2': Remains a top recommendation for RAG. Its strong\n",
+        " performance in semantic similarity tasks makes it well-suited for retrieving relevant documents based on query embeddings. It offers a good balance between\n",
+        " accuracy and efficiency.\n",
+        "\n",
+        "'multi-qa-mpnet-base-dot-v1': Highly relevant for RAG, especially if your\n",
+        "primary focus is question answering. This model is trained specifically for\n",
+        "this purpose and is designed to capture semantic relationships between\n",
+        "questions and relevant passages.\n",
+        "\n",
+        "'msmarco-distilbert-base-v4': This model is explicitly trained on the MS MARCO\n",
+        "dataset, a large-scale dataset for passage ranking and retrieval. Its training\n",
+        "on this dataset makes it particularly well-suited for RAG applications.\n",
+        "```"
+      ],
+      "metadata": {
+        "id": "VIOazwPhsZsi"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "# --- Configuration ---\n",
+        "model_id = \"google/gemma-3-4b-it\" # You can change this to other Gemma models like gemma-7b-it if resources allow\n",
+        "# model_id = \"google/gemma-3-12b-it\" # You can change this to other Gemma models like gemma-7b-it if resources allow\n",
+        "# embedding_model_id = 'sentence-transformers/all-MiniLM-L6-v2'\n",
+        "embedding_model_id = 'sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2'\n",
+        "embedding_model_id = 'all-mpnet-base-v2'\n",
+        "chunk_size = 1000 # Size of text chunks (in characters)\n",
+        "chunk_overlap = 100 # Overlap between chunks\n",
+        "top_k_results = 5 # Number of relevant chunks to retrieve\n",
+        "\n",
+        "# Check if GPU is available and set device\n",
+        "device = torch.device(\"cuda\" if torch.cuda.is_available() else \"cpu\")\n",
+        "print(f\"Using device: {device}\")\n",
+        "\n",
+        "# --- Load Embedding Model ---\n",
+        "print(f\"Loading embedding model: {embedding_model_id}\")\n",
+        "embedding_model = SentenceTransformer(embedding_model_id, device=device)\n",
+        "print(\"Embedding model loaded.\")\n",
+        "\n",
+        "# --- Load Gemma Model and Tokenizer ---\n",
+        "# Use BitsAndBytes for quantization to load larger models on limited resources\n",
+        "quantization_config = BitsAndBytesConfig(load_in_4bit=True) if torch.cuda.is_available() else None\n",
+        "\n",
+        "print(f\"Loading model: {model_id}\")\n",
+        "\n",
+        "# 1. Get your Hugging Face token (see instructions above)\n",
+        "# Or, pass the token directly to from_pretrained:\n",
+        "tokenizer = AutoTokenizer.from_pretrained(model_id, token=hf_token)\n",
+        "# Add padding token if it doesn't exist (common for Gemma models)\n",
+        "if tokenizer.pad_token is None:\n",
+        "    tokenizer.add_special_tokens({'pad_token': tokenizer.eos_token})\n",
+        "    # Important: Resize model embeddings if using a newly added token\n",
+        "    # model.resize_token_embeddings(len(tokenizer)) # Do this after loading the model\n",
+        "\n",
+        "model = AutoModelForCausalLM.from_pretrained(\n",
+        "    model_id,\n",
+        "    quantization_config=quantization_config,\n",
+        "    torch_dtype=torch.float32,\n",
+        "    device_map=\"auto\", # Automatically distribute model across available devices (GPU/CPU)\n",
+        "    token=hf_token  # Pass the token here\n",
+        "    # torch_dtype=torch.bfloat16 # Use bfloat16 for faster computation if supported, requires Ampere GPU or newer\n",
+        ")\n",
+        "# Resize embeddings if pad token was added\n",
+        "if tokenizer.pad_token_id == tokenizer.eos_token_id:\n",
+        "     model.resize_token_embeddings(len(tokenizer))\n",
+        "\n",
+        "print(\"Gemma model and tokenizer loaded.\")"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/",
+          "height": 138,
+          "referenced_widgets": [
+            "01ff2ec8fe694f18afc831ff9813521d",
+            "3ba3d1ef84024f2e8f77ea0fd968f4ff",
+            "4cabd567d80c42b0bebd39df2d2f981e",
+            "db96a09641794fc99c40d94243f8fadc",
+            "85671786c91046b58152367d8c07cd19",
+            "ecc240c293054a978ce29e6c8a7fed8a",
+            "8265e9af75a14019bfc6f1185052af31",
+            "4fd2f5280a784182b61eb06577fd9d86",
+            "9f84d20f5d87491badbedb3c099a83b6",
+            "30e16f5e6108409c97cac28bd206b18f",
+            "bfb52fe525f048faa5105c88ab913a03"
+          ]
+        },
+        "id": "sUtefGl2BtdP",
+        "outputId": "58b806b6-fd25-419d-fdb2-44b8039783c4"
+      },
+      "execution_count": 10,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Using device: cuda\n",
+            "Loading embedding model: all-mpnet-base-v2\n",
+            "Embedding model loaded.\n",
+            "Loading model: google/gemma-3-4b-it\n"
+          ]
+        },
+        {
+          "output_type": "display_data",
+          "data": {
+            "text/plain": [
+              "Loading checkpoint shards:   0%|          | 0/2 [00:00<?, ?it/s]"
+            ],
+            "application/vnd.jupyter.widget-view+json": {
+              "version_major": 2,
+              "version_minor": 0,
+              "model_id": "01ff2ec8fe694f18afc831ff9813521d"
+            }
+          },
+          "metadata": {}
+        },
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Gemma model and tokenizer loaded.\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "## 4. Load and Process PDF"
+      ],
+      "metadata": {
+        "id": "Q_YsfYpbvJQD"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "def extract_text_from_pdf(pdf_path):\n",
+        "    \"\"\"Extracts text from a PDF file.\"\"\"\n",
+        "    print(f\"Extracting text from: {pdf_path}\")\n",
+        "    if not os.path.exists(pdf_path):\n",
+        "        raise FileNotFoundError(f\"Error: PDF file not found at {pdf_path}. Please upload it and update the path.\")\n",
+        "    reader = PdfReader(pdf_path)\n",
+        "    text = \"\"\n",
+        "    for page in reader.pages:\n",
+        "        page_text = page.extract_text()\n",
+        "        if page_text: # Ensure text was extracted\n",
+        "             text += page_text + \"\\n\" # Add newline between pages\n",
+        "    print(f\"Extracted {len(text)} characters.\")\n",
+        "    return text\n",
+        "\n",
+        "def chunk_text(text, chunk_size, chunk_overlap):\n",
+        "    \"\"\"Splits text into overlapping chunks.\"\"\"\n",
+        "    print(f\"Chunking text (size={chunk_size}, overlap={chunk_overlap})...\")\n",
+        "    chunks = []\n",
+        "    start = 0\n",
+        "    while start < len(text):\n",
+        "        end = start + chunk_size\n",
+        "        chunks.append(text[start:end])\n",
+        "        start += chunk_size - chunk_overlap\n",
+        "        if start >= len(text): # Ensure we don't go past the end on the next iteration due to overlap\n",
+        "            break\n",
+        "        # Add the last bit if it wasn't captured\n",
+        "        if start + chunk_size - chunk_overlap > len(text) and end < len(text):\n",
+        "             chunks.append(text[start:])\n",
+        "             break\n",
+        "\n",
+        "    print(f\"Created {len(chunks)} chunks.\")\n",
+        "    # Simple heuristic to remove potentially very short/empty chunks resulting from overlap logic\n",
+        "    chunks = [chunk for chunk in chunks if len(chunk.strip()) > chunk_overlap // 2]\n",
+        "    print(f\"Filtered to {len(chunks)} non-trivial chunks.\")\n",
+        "    return chunks\n",
+        "\n"
+      ],
+      "metadata": {
+        "id": "iXa31WqOBwpO"
+      },
+      "execution_count": 11,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "## 5. Create Embeddings and FAISS Index"
+      ],
+      "metadata": {
+        "id": "fmQP2g3Cu1SI"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "def create_vector_store(chunks, embedding_model):\n",
+        "    \"\"\"Creates embeddings for text chunks and builds a FAISS index.\"\"\"\n",
+        "    if not chunks:\n",
+        "        print(\"No text chunks to process. Skipping vector store creation.\")\n",
+        "        return None, None\n",
+        "\n",
+        "    print(\"Generating embeddings for text chunks...\")\n",
+        "    # Generate embeddings in batches if needed, but for moderate PDFs, this is often fine\n",
+        "    embeddings = embedding_model.encode(chunks, show_progress_bar=True, device=device)\n",
+        "    print(f\"Generated {len(embeddings)} embeddings with dimension {embeddings.shape[1]}.\")\n",
+        "\n",
+        "    # Create FAISS index\n",
+        "    dimension = embeddings.shape[1]\n",
+        "    # Using IndexFlatL2 for simple Euclidean distance search\n",
+        "    index = faiss.IndexFlatL2(dimension)\n",
+        "    # Add the embeddings to the index\n",
+        "    index.add(np.array(embeddings).astype('float32')) # FAISS requires float32 numpy arrays\n",
+        "    print(f\"FAISS index created with {index.ntotal} vectors.\")\n",
+        "    return index, embeddings\n",
+        "\n"
+      ],
+      "metadata": {
+        "id": "8yGdel3XBznC"
+      },
+      "execution_count": 12,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "## 6. RAG Query Function"
+      ],
+      "metadata": {
+        "id": "OHHEiDJRu62o"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "def query_rag(question, vector_index, text_chunks, embedding_model, model, tokenizer, top_k=3, print_output=False):\n",
+        "    \"\"\"\n",
+        "    Performs RAG: retrieves relevant chunks and generates an answer using Gemma.\n",
+        "    \"\"\"\n",
+        "    if vector_index is None:\n",
+        "        return \"Error: Vector index not created. Cannot perform query.\"\n",
+        "\n",
+        "    if print_output:\n",
+        "        print(f\"\\n--- Querying RAG System ---\")\n",
+        "        print(f\"Question: {question}\")\n",
+        "\n",
+        "    # 1. Embed the question\n",
+        "    if print_output:\n",
+        "        print(\"Embedding question...\")\n",
+        "    question_embedding = embedding_model.encode([question], device=device) # 4b device=device)\n",
+        "    question_embedding = np.array(question_embedding).astype('float32')\n",
+        "\n",
+        "    # 2. Retrieve relevant chunks from FAISS\n",
+        "    if print_output:\n",
+        "        print(f\"Searching for top {top_k} relevant chunks...\")\n",
+        "    # D: distances, I: indices of the nearest neighbors\n",
+        "    distances, indices = vector_index.search(question_embedding, top_k)\n",
+        "\n",
+        "    # 3. Get the actual text chunks\n",
+        "    retrieved_chunks = [text_chunks[i] for i in indices[0]] # indices[0] because we searched for one query\n",
+        "\n",
+        "    if print_output:\n",
+        "        print(\"Retrieved Chunks:\")\n",
+        "        for i, chunk in enumerate(retrieved_chunks):\n",
+        "            print(f\"Chunk {i+1} (Index {indices[0][i]}, Distance {distances[0][i]:.4f}):\\n{textwrap.shorten(chunk, width=100, placeholder='...')}\\n\")\n",
+        "\n",
+        "    # 4. Combine context and question for the LLM prompt\n",
+        "    context = \"\\n\\n\".join(retrieved_chunks)\n",
+        "\n",
+        "    # Construct the prompt using the specific chat template for Gemma-IT models\n",
+        "    # Reference: https://huggingface.co/google/gemma-2b-it#chat-template\n",
+        "    messages = [\n",
+        "        {\"role\": \"user\", \"content\": f\"Based on the following context, please answer the question.\\n\\nContext:\\n{context}\\n\\nQuestion: {question}\"},\n",
+        "    ]\n",
+        "    prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)\n",
+        "\n",
+        "    # print(\"\\n--- Prompt for Gemma ---\")\n",
+        "    # print(textwrap.fill(prompt, width=100)) # Optional: print the full prompt\n",
+        "    # print(\"-------------------------\\n\")\n",
+        "\n",
+        "    # 5. Generate the answer using Gemma\n",
+        "    if print_output:\n",
+        "        print(\"Generating answer with Gemma...\")\n",
+        "    # Ensure the model and inputs are on the same device\n",
+        "    inputs = tokenizer(prompt, return_tensors=\"pt\", padding=True, truncation=True, max_length=2048).to(device) # Adjust max_length if needed\n",
+        "\n",
+        "    # Generate text\n",
+        "    with torch.no_grad(): # Disable gradient calculation for inference\n",
+        "        outputs = model.generate(\n",
+        "            **inputs,\n",
+        "            max_new_tokens=256,  # Limit the length of the generated answer\n",
+        "            do_sample=True,      # Enable sampling for more diverse answers\n",
+        "            temperature=0.7,     # Control randomness (lower = more deterministic)\n",
+        "            top_k=50,            # Consider top 50 tokens during sampling\n",
+        "            top_p=0.95           # Use nucleus sampling\n",
+        "        )\n",
+        "\n",
+        "    # Decode the generated text, skipping special tokens and the prompt\n",
+        "    # We need to decode only the newly generated tokens, not the input prompt\n",
+        "    generated_token_ids = outputs[0][inputs['input_ids'].shape[1]:]\n",
+        "    answer = tokenizer.decode(generated_token_ids, skip_special_tokens=True)\n",
+        "\n",
+        "    if print_output:\n",
+        "        print(\"\\n--- Generated Answer ---\")\n",
+        "        print(textwrap.fill(answer, width=80))\n",
+        "        print(\"------------------------\\n\")\n",
+        "\n",
+        "    return answer"
+      ],
+      "metadata": {
+        "id": "vFsqXRqnB22b"
+      },
+      "execution_count": 13,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "## Chatbot\n",
+        "https://ai.google.dev/gemma/docs/gemma_chat"
+      ],
+      "metadata": {
+        "id": "YIyM5nPvvSSI"
+      }
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Define formatting helper functions"
+      ],
+      "metadata": {
+        "id": "8zJabqFqvgqM"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "def display_chat(prompt, text):\n",
+        "  formatted_prompt = \"<font size='+1' color='brown'>🙋‍♂️<blockquote>\" + prompt + \"</blockquote></font>\"\n",
+        "  text = text.replace('•', '  *')\n",
+        "  text = textwrap.indent(text, '> ', predicate=lambda _: True)\n",
+        "  formatted_text = \"<font size='+1' color='teal'>🤖\\n\\n\" + text + \"\\n</font>\"\n",
+        "  return Markdown(formatted_prompt+formatted_text)\n",
+        "\n",
+        "def to_markdown(text):\n",
+        "  text = text.replace('•', '  *')\n",
+        "  return Markdown(textwrap.indent(text, '> ', predicate=lambda _: True))"
+      ],
+      "metadata": {
+        "id": "QbalUe2Evh49"
+      },
+      "execution_count": 14,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Building the chatbot"
+      ],
+      "metadata": {
+        "id": "hoby6yTivsXN"
+      }
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "```\n",
+        "<start_of_turn>user\\n  ... <end_of_turn>\\n\n",
+        "<start_of_turn>model\\n ... <end_of_turn>\\n\n",
+        "````"
+      ],
+      "metadata": {
+        "id": "jZZkZV3svzjv"
+      }
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Create a chat helper to manage the conversation state"
+      ],
+      "metadata": {
+        "id": "uv1Ivg82v9nz"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "class ChatState():\n",
+        "  \"\"\"\n",
+        "  Manages the conversation history for a turn-based chatbot\n",
+        "  Follows the turn-based conversation guidelines for the Gemma family of models\n",
+        "  documented at https://ai.google.dev/gemma/docs/core/prompt-structure\n",
+        "  \"\"\"\n",
+        "\n",
+        "  __START_TURN_USER__ = \"<start_of_turn>user\\n\"\n",
+        "  __START_TURN_MODEL__ = \"<start_of_turn>model\\n\"\n",
+        "  __END_TURN__ = \"<end_of_turn>\\n\"\n",
+        "\n",
+        "  def __init__(self, model, system=\"\"):\n",
+        "    \"\"\"\n",
+        "    Initializes the chat state.\n",
+        "\n",
+        "    Args:\n",
+        "        model: The language model to use for generating responses.\n",
+        "        system: (Optional) System instructions or bot description.\n",
+        "    \"\"\"\n",
+        "    self.model = model\n",
+        "    self.system = system\n",
+        "    self.history = []\n",
+        "\n",
+        "  def add_to_history_as_user(self, message):\n",
+        "      \"\"\"\n",
+        "      Adds a user message to the history with start/end turn markers.\n",
+        "      \"\"\"\n",
+        "      self.history.append(self.__START_TURN_USER__ + message + self.__END_TURN__)\n",
+        "\n",
+        "  def add_to_history_as_model(self, message):\n",
+        "      \"\"\"\n",
+        "      Adds a model response to the history with start/end turn markers.\n",
+        "      \"\"\"\n",
+        "      self.history.append(self.__START_TURN_MODEL__ + message + self.__END_TURN__)\n",
+        "\n",
+        "  def get_history(self):\n",
+        "      \"\"\"\n",
+        "      Returns the entire chat history as a single string.\n",
+        "      \"\"\"\n",
+        "      return \"\".join([*self.history])\n",
+        "\n",
+        "  def get_full_prompt(self):\n",
+        "    \"\"\"\n",
+        "    Builds the prompt for the language model, including history and system description.\n",
+        "    \"\"\"\n",
+        "    prompt = self.get_history() + self.__START_TURN_MODEL__\n",
+        "    if len(self.system)>0:\n",
+        "      prompt = self.system + \"\\n\" + prompt\n",
+        "    return prompt\n",
+        "\n",
+        "  def send_message(self, message):\n",
+        "    \"\"\"\n",
+        "    Handles sending a user message and getting a model response.\n",
+        "\n",
+        "    Args:\n",
+        "        message: The user's message.\n",
+        "\n",
+        "    Returns:\n",
+        "        The model's response.\n",
+        "    \"\"\"\n",
+        "    self.add_to_history_as_user(message)\n",
+        "    prompt = self.get_full_prompt()\n",
+        "    response = query_rag(message, vector_index, text_chunks, embedding_model, model, tokenizer, top_k=top_k_results)\n",
+        "    result = response.replace(prompt, \"\")  # Extract only the new response\n",
+        "    self.add_to_history_as_model(result)\n",
+        "\n",
+        "    return result"
+      ],
+      "metadata": {
+        "id": "BWC8f367vuu0"
+      },
+      "execution_count": 15,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "## Prepare\n",
+        "\n",
+        "\n",
+        "*   Load pdf and chunk document\n",
+        "*   Index creation\n",
+        "\n"
+      ],
+      "metadata": {
+        "id": "zhtueAAqvyq9"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "pdf_path = \"/content/ABB Sustainability Statement 2024.pdf\"\n",
+        "pdf_path = \"/content/2025-03-11-GB-Komax-sa-esg-report-2024-DE.pdf\"\n",
+        "pdf_path = sust_report_komax"
+      ],
+      "metadata": {
+        "id": "a_Zl1Yopq5vq"
+      },
+      "execution_count": 26,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "# --- Execute PDF Processing ---\n",
+        "try:\n",
+        "    document_text = extract_text_from_pdf(pdf_path)\n",
+        "    text_chunks = chunk_text(document_text, chunk_size, chunk_overlap)\n",
+        "\n",
+        "    # Display first few chunks (optional)\n",
+        "    print(\"\\n--- First 3 Chunks ---\")\n",
+        "    for i, chunk in enumerate(text_chunks[:3]):\n",
+        "        print(f\"Chunk {i+1}:{textwrap.shorten(chunk, width=150, placeholder='...')}\")\n",
+        "\n",
+        "except FileNotFoundError as e:\n",
+        "    print(e)\n",
+        "    # Stop execution if PDF is not found\n",
+        "    text_chunks = None # Ensure variable exists but is None\n",
+        "\n",
+        "# --- Execute Index Creation ---\n",
+        "if text_chunks:\n",
+        "    vector_index, chunk_embeddings = create_vector_store(text_chunks, embedding_model)\n",
+        "else:\n",
+        "    vector_index = None\n",
+        "    print(\"Skipping index creation due to previous error.\")"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/",
+          "height": 281,
+          "referenced_widgets": [
+            "aa47d713db1c46c9a643f6a21a233bc7",
+            "54b381b8c1d6478b8479924ecbd3b74a",
+            "8b26e527755d4f9db5c9060c1d205f29",
+            "c765bab5343c45038d10d13ca170ef2c",
+            "5156602cb8704e71b193ccf2dfd02d76",
+            "9f4266b4448241d2a85385dce748d510",
+            "88a2d2ef7b0f4d43a925b4b05ebf481e",
+            "2ac18ccd20704b7182a43ff8ab6a77d7",
+            "79728b02d17f48bc8df6710481f7fc61",
+            "7879ab76b4fd48358cfb10cb17e99e97",
+            "a88d10e0e9ea48b1a6ff598b7991eff8"
+          ]
+        },
+        "id": "PxLT5NiUv1ZQ",
+        "outputId": "29094dd2-dac7-4b15-ce0e-cc0102a4e04f"
+      },
+      "execution_count": 27,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Extracting text from: /content/drive/MyDrive/ZHAW/MAIN/TA/ml_project/sustainability_statements/2025-03-11-GB-Komax-sa-esg-report-2024-DE.pdf\n",
+            "Extracted 174975 characters.\n",
+            "Chunking text (size=1000, overlap=100)...\n",
+            "Created 195 chunks.\n",
+            "Filtered to 195 non-trivial chunks.\n",
+            "\n",
+            "--- First 3 Chunks ---\n",
+            "Chunk 1:DRIVING AUTOMATION ESG-Bericht 2024 INHALT 64 Komax Gruppe ESG-Bericht 2024 Nachhaltig, sozial und verantwortungsbewusst 65 Rahmen des ESG-Berichts...\n",
+            "Chunk 2:ensethik und Compliance 112 Lieferketten-Risikomanagement 114 Zusätzliche Informationen 117 Erklärung des Verwaltungsrats und OR-Referenztabelle...\n",
+            "Chunk 3:und drei Milliarden Menschen um 1960 auf über acht Milliarden im Jahr 2024. Der technologische Fort - schritt erfordert zudem immer mehr...\n",
+            "Generating embeddings for text chunks...\n"
+          ]
+        },
+        {
+          "output_type": "display_data",
+          "data": {
+            "text/plain": [
+              "Batches:   0%|          | 0/7 [00:00<?, ?it/s]"
+            ],
+            "application/vnd.jupyter.widget-view+json": {
+              "version_major": 2,
+              "version_minor": 0,
+              "model_id": "aa47d713db1c46c9a643f6a21a233bc7"
+            }
+          },
+          "metadata": {}
+        },
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Generated 195 embeddings with dimension 768.\n",
+            "FAISS index created with 195 vectors.\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "## 7. Ask Questions!"
+      ],
+      "metadata": {
+        "id": "1uWr1LsLvBsK"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "print_output = True"
+      ],
+      "metadata": {
+        "id": "WkACtx1C0M4u"
+      },
+      "execution_count": 28,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "# --- Example Usage ---\n",
+        "if vector_index is not None:\n",
+        "    # Ask your first question\n",
+        "    question1 = \"What company is mentioned in the text?\"\n",
+        "    answer1 = query_rag(question1, vector_index, text_chunks, embedding_model, model, tokenizer, top_k=top_k_results, print_output=print_output)\n",
+        "    print(f\"\\nQuestion: {question1}\\nAnswer: {answer1}\\n\")\n",
+        "\n",
+        "else:\n",
+        "    print(\"Cannot ask questions as the vector index was not created (likely due to PDF loading error).\")"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "by36kM_QB50C",
+        "outputId": "f2442241-b846-4a68-cd89-6eec33075bf2"
+      },
+      "execution_count": 29,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "\n",
+            "--- Querying RAG System ---\n",
+            "Question: What company is mentioned in the text?\n",
+            "Embedding question...\n",
+            "Searching for top 5 relevant chunks...\n",
+            "Retrieved Chunks:\n",
+            "Chunk 1 (Index 191, Distance 1.0584):\n",
+            "ar (www.komaxgroup.com/organization). Unternehmensführung Informationen zur Unternehmensführung...\n",
+            "\n",
+            "Chunk 2 (Index 193, Distance 1.1192):\n",
+            "Unternehmensethik und Compliance 103 112 Achtung der Menschenrechte Unternehmensethik und...\n",
+            "\n",
+            "Chunk 3 (Index 9, Distance 1.2746):\n",
+            "tor Relations / ESG Telefon +41 41 455 04 55 communication@komaxgroup.com 68 Komax Gruppe ESG-...\n",
+            "\n",
+            "Chunk 4 (Index 192, Distance 1.2983):\n",
+            "ntwortlich. Der ESG-Bericht 2024 enthält die vom Schweizerischen Obligationenrecht (OR)...\n",
+            "\n",
+            "Chunk 5 (Index 24, Distance 1.3077):\n",
+            "h Interessierte anmelden können (› Seite 137), halb- jährliche Telefonkonferenzen mit CEO und...\n",
+            "\n",
+            "Generating answer with Gemma...\n",
+            "\n",
+            "--- Generated Answer ---\n",
+            "The company mentioned in the text is Komax Group.\n",
+            "------------------------\n",
+            "\n",
+            "\n",
+            "Question: What company is mentioned in the text?\n",
+            "Answer: The company mentioned in the text is Komax Group.\n",
+            "\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "# Prompts\n",
+        "\n",
+        "**Avoid :: Instead use**<br>\n",
+        "non-binding :: non binding<br>\n",
+        "2050 :: year 2050<br>\n",
+        "such as the Science Based Targets initiative (SBTi) :: like the Science Based Targets initiative<br>"
+      ],
+      "metadata": {
+        "id": "0IrVDJPXYtd5"
+      }
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "```\n",
+        "Potential Issues:\n",
+        "\n",
+        "Bias in Voting Instructions: The prompts explicitly instruct the model to vote \"AGAINST\" under certain conditions. While this aligns with the intended logic, it could introduce bias in the model's responses, potentially leading to overly negative or critical evaluations.\n",
+        "\n",
+        "\"Mandatory\" and \"Non-Binding\": These terms might have specific legal or regulatory connotations. While they seem relevant to the context, ensure they are used appropriately and within the scope of the intended application.\n",
+        "\n",
+        "\"Material Concerns\": This phrase is relatively subjective. It could be beneficial to provide more concrete examples or criteria for what constitutes \"material concerns\" to guide the model's judgment.\n",
+        "\n",
+        "\"Correct, High-Quality, Domain Expert\": These expectations might be too stringent. LLMs are probabilistic and not always perfectly accurate. Emphasizing these attributes might lead to overconfidence or misinterpretation of the model's capabilities.\n",
+        "\n",
+        "Mitigation Strategies\n",
+        "Rephrasing for Neutrality: Instead of directly instructing the model to vote \"AGAINST\", consider using more neutral language, such as \"assess whether the non-financial report meets the criteria for approval\" or \"identify any potential issues that warrant further investigation.\"\n",
+        "\n",
+        "Providing Clearer Definitions: Include definitions or examples for potentially ambiguous terms like \"material concerns\" to ensure consistent and reliable responses.\n",
+        "\n",
+        "Emphasizing Transparency and Limitations: Acknowledge that the model's responses are based on probabilistic reasoning and the provided context. Encourage critical evaluation of the results and provide opportunities for human review and validation.\n",
+        "\n",
+        "In general, while the prompts do not contain obvious \"forbidden\" words, they could be refined to reduce potential bias, enhance clarity, and promote responsible use of the LLM. By carefully considering the language and framing of your prompts, you can improve the reliability and trustworthiness of the generated responses. I hope this helps! Let me know if you have any other questions.\n",
+        "\n",
+        "Sources\n",
+        "www.issgovernance.com/file/policy/latest/emea/Europe-Voting-Guidelines.pdf\n",
+        "````"
+      ],
+      "metadata": {
+        "id": "dvZZKcGiSyHV"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "prompt_context = \"\"\"**Role:** You are a voting guideline expert and have to make votes according to the guidelines.\n",
+        "                    **Goal:** Your task is to approve of Non-Financial Information Statement/Report. Vote FOR or AGAINST.\n",
+        "                    **Policy Recommodation:** Generally, vote for the approval of mandatory non-financial information statement/report, unless the independent assurance services provider has raised material concerns about the information presented.\n",
+        "                    **Audience:** Provide an answer using the provided contexts. Your answers are correct, high-quality, and written by a domain expert.\n",
+        "                    **Constraint:** Keep the answer below 50 words.\n",
+        "                    **Constraints:** If the provided context does not contain the answer, simply state, The provided context does not have the answer.\n",
+        "\"\"\"\n"
+      ],
+      "outputs": [],
+      "execution_count": 30,
+      "metadata": {
+        "id": "k5a2roRQBZbi"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "prompt_audit_1 = \"\"\"**Task:** vote AGAINST non-financial information statement/report, if the non-financial reporting is not audited.\n",
+        "                    Provide a brief explanation or quote.\n",
+        "                    Final answer with vote FOR or AGAINST.\n",
+        "\"\"\"\n",
+        "prompt_audit_1 = \"\"\"**Task:** Evaluate the non-financial information statement/report based on whether it has undergone an independent audit.\n",
+        "                    If the report lacks an audit, assess the implications for its reliability and determine the appropriate vote.\n",
+        "                    Provide a concise explanation or relevant quote from the report to support your decision.\n",
+        "                    Conclude with a clear vote: FOR or AGAINST.\n",
+        "\"\"\"\n",
+        "\n",
+        "chat_audit = ChatState(model)\n",
+        "message = prompt_context + prompt_audit_1\n",
+        "display_chat(message, chat_audit.send_message(message))"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/",
+          "height": 442
+        },
+        "id": "71n0eonODhwH",
+        "outputId": "90426ec1-838b-425f-acdc-70b31c7b4443"
+      },
+      "execution_count": 31,
+      "outputs": [
+        {
+          "output_type": "execute_result",
+          "data": {
+            "text/plain": [
+              "<IPython.core.display.Markdown object>"
+            ],
+            "text/markdown": "<font size='+1' color='brown'>🙋‍♂️<blockquote>**Role:** You are a voting guideline expert and have to make votes according to the guidelines.\n                    **Goal:** Your task is to approve of Non-Financial Information Statement/Report. Vote FOR or AGAINST.\n                    **Policy Recommodation:** Generally, vote for the approval of mandatory non-financial information statement/report, unless the independent assurance services provider has raised material concerns about the information presented.\n                    **Audience:** Provide an answer using the provided contexts. Your answers are correct, high-quality, and written by a domain expert.\n                    **Constraint:** Keep the answer below 50 words.\n                    **Constraints:** If the provided context does not contain the answer, simply state, The provided context does not have the answer.\n**Task:** Evaluate the non-financial information statement/report based on whether it has undergone an independent audit.\n                    If the report lacks an audit, assess the implications for its reliability and determine the appropriate vote. \n                    Provide a concise explanation or relevant quote from the report to support your decision. \n                    Conclude with a clear vote: FOR or AGAINST.\n</blockquote></font><font size='+1' color='teal'>🤖\n\n> The provided context details audits conducted on suppliers, including risk assessments and the use of EcoVadis (IQ Plus) modules. However, it doesn’t explicitly state that the *entire* non-financial report has undergone independent assurance.\n> \n> Vote: AGAINST.\n</font>"
+          },
+          "metadata": {},
+          "execution_count": 31
+        }
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Answer Gemini\n",
+        "````\n",
+        "The ABB Sustainability Statement 2024 underwent independent limited assurance by KPMG AG.\n",
+        "KPMG raised no material concerns, concluding that \"nothing has come to our attention\n",
+        "that causes us to believe that the Sustainability Information is not prepared,\n",
+        "in all material respects, in accordance with the Sustainability Reporting Criteria\".\n",
+        "\n",
+        "Vote: FOR\n",
+        "````"
+      ],
+      "metadata": {
+        "id": "M_PRCsQZk2n8"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "prompt_audit_2 = \"\"\"**Task:** vote AGAINST non-financial information statement/report, if the non-financial reporting reflecting a non binding item on the meeting agenda.\n",
+        "                    Provide a brief explanation or quote.\n",
+        "                    Final answer with vote FOR or AGAINST.\n",
+        "\"\"\"\n",
+        "\n",
+        "\n",
+        "prompt_audit_2 = \"\"\"**Task:** Assess the non-financial information statement/report in relation to its binding status on the meeting agenda.\n",
+        "                    If the report is presented as a non-binding item, evaluate the implications and determine the appropriate vote.\n",
+        "                    Provide a concise explanation or relevant quote to support your decision.\n",
+        "                    Conclude with a clear vote: FOR or AGAINST.\n",
+        "\"\"\"\n",
+        "\n",
+        "message = prompt_context + prompt_audit_2\n",
+        "display_chat(message, chat_audit.send_message(message))"
+      ],
+      "metadata": {
+        "id": "bbFMkG-KEWeP"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "prompt_netzero_1 = \"\"\"**Task:** vote AGAINST non-financial information statement/report, if the company has not publicly declared a target to achieve Net Zero greenhouse gas emissions by year 2050 or sooner.\n",
+        "                    Provide a brief explanation or quote.\n",
+        "                    Final answer with vote FOR or AGAINST.\n",
+        "\"\"\"\n",
+        "prompt_netzero_1 = \"\"\"**Task:** Evaluate the company's commitment to achieving Net Zero greenhouse gas emissions by year 2050 or sooner.\n",
+        "                      Determine if the company has publicly declared such a target.\n",
+        "                      If not, assess the implications for its environmental sustainability efforts and recommend an appropriate vote.\n",
+        "                      Provide a concise explanation or relevant quote to support your recommendation.\n",
+        "                      Conclude with a clear vote: FOR or AGAINST.\n",
+        "\"\"\"\n",
+        "\n",
+        "\n",
+        "chat_netzero = ChatState(model)\n",
+        "message = prompt_context + prompt_netzero_1\n",
+        "display_chat(message, chat_netzero.send_message(message))"
+      ],
+      "metadata": {
+        "id": "WQRlqmnJ8pNC"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "prompt_netzero_2 = \"\"\"**Task:** vote AGAINST non-financial information statement/report, if the company’s Net Zero target does not include Scope 1, Scope 2, and all relevant Scope 3 emissions.\n",
+        "                    Provide a brief explanation or quote.\n",
+        "                    Final answer with vote FOR or AGAINST.\n",
+        "\"\"\"\n",
+        "\n",
+        "prompt_netzero_2 = \"\"\"**Task:** Evaluate the company's Net Zero target, specifically focusing on its inclusion of Scope 1, Scope 2, and all relevant Scope 3 emissions.\n",
+        "                      If the target does not encompass all these scopes, assess the implications for the company's comprehensive approach to emissions reduction and determine the appropriate vote.\n",
+        "                      Provide a concise explanation or relevant quote from the report to support your decision.\n",
+        "                      Conclude with a clear vote: FOR or AGAINST.\n",
+        "\"\"\"\n",
+        "\n",
+        "message = prompt_context + prompt_netzero_2\n",
+        "display_chat(message, chat_netzero.send_message(message))"
+      ],
+      "metadata": {
+        "id": "C2k5NELONjGY"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "prompt_netzero_3 = \"\"\"**Task:** vote AGAINST non-financial information statement/report, if the company is not taking the steps needed to be aligned with a Net Zero by year 2050 trajectory (e.g. SBTI et al).\n",
+        "                    Provide a brief explanation or quote.\n",
+        "                    Final answer with vote FOR or AGAINST.\n",
+        "\"\"\"\n",
+        "prompt_netzero_3 = \"\"\"**Task:** Evaluate the company's actions and plans in relation to achieving a Net Zero trajectory by year 2050, considering established frameworks like the Science Based Targets initiative.\n",
+        "                      Assess whether the company is taking the necessary steps to align with this trajectory.\n",
+        "                      If not, analyze the implications for its long-term sustainability goals and determine the appropriate vote.\n",
+        "                      Provide a concise explanation or relevant quote from the report to support your decision.\n",
+        "                      Conclude with a clear vote: FOR or AGAINST.\n",
+        "\"\"\"\n",
+        "\n",
+        "\n",
+        "message = prompt_context + prompt_netzero_3\n",
+        "display_chat(message, chat_netzero.send_message(message))"
+      ],
+      "metadata": {
+        "id": "w9Wzp6r_ODLP"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "print(chat_netzero.get_history())"
+      ],
+      "metadata": {
+        "id": "4XwJAoOb5nDx"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "source": [],
+      "metadata": {
+        "id": "z22BAGjSB4Lj"
+      }
+    }
+  ],
+  "metadata": {
+    "colab": {
+      "provenance": [],
+      "machine_shape": "hm",
+      "gpuType": "T4",
+      "include_colab_link": true
+    },
+    "kernelspec": {
+      "display_name": "Python 3",
+      "name": "python3"
+    },
+    "widgets": {
+      "application/vnd.jupyter.widget-state+json": {
+        "01ff2ec8fe694f18afc831ff9813521d": {
+          "model_module": "@jupyter-widgets/controls",
+          "model_name": "HBoxModel",
+          "model_module_version": "1.5.0",
+          "state": {
+            "_dom_classes": [],
+            "_model_module": "@jupyter-widgets/controls",
+            "_model_module_version": "1.5.0",
+            "_model_name": "HBoxModel",
+            "_view_count": null,
+            "_view_module": "@jupyter-widgets/controls",
+            "_view_module_version": "1.5.0",
+            "_view_name": "HBoxView",
+            "box_style": "",
+            "children": [
+              "IPY_MODEL_3ba3d1ef84024f2e8f77ea0fd968f4ff",
+              "IPY_MODEL_4cabd567d80c42b0bebd39df2d2f981e",
+              "IPY_MODEL_db96a09641794fc99c40d94243f8fadc"
+            ],
+            "layout": "IPY_MODEL_85671786c91046b58152367d8c07cd19"
+          }
+        },
+        "3ba3d1ef84024f2e8f77ea0fd968f4ff": {
+          "model_module": "@jupyter-widgets/controls",
+          "model_name": "HTMLModel",
+          "model_module_version": "1.5.0",
+          "state": {
+            "_dom_classes": [],
+            "_model_module": "@jupyter-widgets/controls",
+            "_model_module_version": "1.5.0",
+            "_model_name": "HTMLModel",
+            "_view_count": null,
+            "_view_module": "@jupyter-widgets/controls",
+            "_view_module_version": "1.5.0",
+            "_view_name": "HTMLView",
+            "description": "",
+            "description_tooltip": null,
+            "layout": "IPY_MODEL_ecc240c293054a978ce29e6c8a7fed8a",
+            "placeholder": "​",
+            "style": "IPY_MODEL_8265e9af75a14019bfc6f1185052af31",
+            "value": "Loading checkpoint shards: 100%"
+          }
+        },
+        "4cabd567d80c42b0bebd39df2d2f981e": {
+          "model_module": "@jupyter-widgets/controls",
+          "model_name": "FloatProgressModel",
+          "model_module_version": "1.5.0",
+          "state": {
+            "_dom_classes": [],
+            "_model_module": "@jupyter-widgets/controls",
+            "_model_module_version": "1.5.0",
+            "_model_name": "FloatProgressModel",
+            "_view_count": null,
+            "_view_module": "@jupyter-widgets/controls",
+            "_view_module_version": "1.5.0",
+            "_view_name": "ProgressView",
+            "bar_style": "success",
+            "description": "",
+            "description_tooltip": null,
+            "layout": "IPY_MODEL_4fd2f5280a784182b61eb06577fd9d86",
+            "max": 2,
+            "min": 0,
+            "orientation": "horizontal",
+            "style": "IPY_MODEL_9f84d20f5d87491badbedb3c099a83b6",
+            "value": 2
+          }
+        },
+        "db96a09641794fc99c40d94243f8fadc": {
+          "model_module": "@jupyter-widgets/controls",
+          "model_name": "HTMLModel",
+          "model_module_version": "1.5.0",
+          "state": {
+            "_dom_classes": [],
+            "_model_module": "@jupyter-widgets/controls",
+            "_model_module_version": "1.5.0",
+            "_model_name": "HTMLModel",
+            "_view_count": null,
+            "_view_module": "@jupyter-widgets/controls",
+            "_view_module_version": "1.5.0",
+            "_view_name": "HTMLView",
+            "description": "",
+            "description_tooltip": null,
+            "layout": "IPY_MODEL_30e16f5e6108409c97cac28bd206b18f",
+            "placeholder": "​",
+            "style": "IPY_MODEL_bfb52fe525f048faa5105c88ab913a03",
+            "value": " 2/2 [00:15&lt;00:00,  7.62s/it]"
+          }
+        },
+        "85671786c91046b58152367d8c07cd19": {
+          "model_module": "@jupyter-widgets/base",
+          "model_name": "LayoutModel",
+          "model_module_version": "1.2.0",
+          "state": {
+            "_model_module": "@jupyter-widgets/base",
+            "_model_module_version": "1.2.0",
+            "_model_name": "LayoutModel",
+            "_view_count": null,
+            "_view_module": "@jupyter-widgets/base",
+            "_view_module_version": "1.2.0",
+            "_view_name": "LayoutView",
+            "align_content": null,
+            "align_items": null,
+            "align_self": null,
+            "border": null,
+            "bottom": null,
+            "display": null,
+            "flex": null,
+            "flex_flow": null,
+            "grid_area": null,
+            "grid_auto_columns": null,
+            "grid_auto_flow": null,
+            "grid_auto_rows": null,
+            "grid_column": null,
+            "grid_gap": null,
+            "grid_row": null,
+            "grid_template_areas": null,
+            "grid_template_columns": null,
+            "grid_template_rows": null,
+            "height": null,
+            "justify_content": null,
+            "justify_items": null,
+            "left": null,
+            "margin": null,
+            "max_height": null,
+            "max_width": null,
+            "min_height": null,
+            "min_width": null,
+            "object_fit": null,
+            "object_position": null,
+            "order": null,
+            "overflow": null,
+            "overflow_x": null,
+            "overflow_y": null,
+            "padding": null,
+            "right": null,
+            "top": null,
+            "visibility": null,
+            "width": null
+          }
+        },
+        "ecc240c293054a978ce29e6c8a7fed8a": {
+          "model_module": "@jupyter-widgets/base",
+          "model_name": "LayoutModel",
+          "model_module_version": "1.2.0",
+          "state": {
+            "_model_module": "@jupyter-widgets/base",
+            "_model_module_version": "1.2.0",
+            "_model_name": "LayoutModel",
+            "_view_count": null,
+            "_view_module": "@jupyter-widgets/base",
+            "_view_module_version": "1.2.0",
+            "_view_name": "LayoutView",
+            "align_content": null,
+            "align_items": null,
+            "align_self": null,
+            "border": null,
+            "bottom": null,
+            "display": null,
+            "flex": null,
+            "flex_flow": null,
+            "grid_area": null,
+            "grid_auto_columns": null,
+            "grid_auto_flow": null,
+            "grid_auto_rows": null,
+            "grid_column": null,
+            "grid_gap": null,
+            "grid_row": null,
+            "grid_template_areas": null,
+            "grid_template_columns": null,
+            "grid_template_rows": null,
+            "height": null,
+            "justify_content": null,
+            "justify_items": null,
+            "left": null,
+            "margin": null,
+            "max_height": null,
+            "max_width": null,
+            "min_height": null,
+            "min_width": null,
+            "object_fit": null,
+            "object_position": null,
+            "order": null,
+            "overflow": null,
+            "overflow_x": null,
+            "overflow_y": null,
+            "padding": null,
+            "right": null,
+            "top": null,
+            "visibility": null,
+            "width": null
+          }
+        },
+        "8265e9af75a14019bfc6f1185052af31": {
+          "model_module": "@jupyter-widgets/controls",
+          "model_name": "DescriptionStyleModel",
+          "model_module_version": "1.5.0",
+          "state": {
+            "_model_module": "@jupyter-widgets/controls",
+            "_model_module_version": "1.5.0",
+            "_model_name": "DescriptionStyleModel",
+            "_view_count": null,
+            "_view_module": "@jupyter-widgets/base",
+            "_view_module_version": "1.2.0",
+            "_view_name": "StyleView",
+            "description_width": ""
+          }
+        },
+        "4fd2f5280a784182b61eb06577fd9d86": {
+          "model_module": "@jupyter-widgets/base",
+          "model_name": "LayoutModel",
+          "model_module_version": "1.2.0",
+          "state": {
+            "_model_module": "@jupyter-widgets/base",
+            "_model_module_version": "1.2.0",
+            "_model_name": "LayoutModel",
+            "_view_count": null,
+            "_view_module": "@jupyter-widgets/base",
+            "_view_module_version": "1.2.0",
+            "_view_name": "LayoutView",
+            "align_content": null,
+            "align_items": null,
+            "align_self": null,
+            "border": null,
+            "bottom": null,
+            "display": null,
+            "flex": null,
+            "flex_flow": null,
+            "grid_area": null,
+            "grid_auto_columns": null,
+            "grid_auto_flow": null,
+            "grid_auto_rows": null,
+            "grid_column": null,
+            "grid_gap": null,
+            "grid_row": null,
+            "grid_template_areas": null,
+            "grid_template_columns": null,
+            "grid_template_rows": null,
+            "height": null,
+            "justify_content": null,
+            "justify_items": null,
+            "left": null,
+            "margin": null,
+            "max_height": null,
+            "max_width": null,
+            "min_height": null,
+            "min_width": null,
+            "object_fit": null,
+            "object_position": null,
+            "order": null,
+            "overflow": null,
+            "overflow_x": null,
+            "overflow_y": null,
+            "padding": null,
+            "right": null,
+            "top": null,
+            "visibility": null,
+            "width": null
+          }
+        },
+        "9f84d20f5d87491badbedb3c099a83b6": {
+          "model_module": "@jupyter-widgets/controls",
+          "model_name": "ProgressStyleModel",
+          "model_module_version": "1.5.0",
+          "state": {
+            "_model_module": "@jupyter-widgets/controls",
+            "_model_module_version": "1.5.0",
+            "_model_name": "ProgressStyleModel",
+            "_view_count": null,
+            "_view_module": "@jupyter-widgets/base",
+            "_view_module_version": "1.2.0",
+            "_view_name": "StyleView",
+            "bar_color": null,
+            "description_width": ""
+          }
+        },
+        "30e16f5e6108409c97cac28bd206b18f": {
+          "model_module": "@jupyter-widgets/base",
+          "model_name": "LayoutModel",
+          "model_module_version": "1.2.0",
+          "state": {
+            "_model_module": "@jupyter-widgets/base",
+            "_model_module_version": "1.2.0",
+            "_model_name": "LayoutModel",
+            "_view_count": null,
+            "_view_module": "@jupyter-widgets/base",
+            "_view_module_version": "1.2.0",
+            "_view_name": "LayoutView",
+            "align_content": null,
+            "align_items": null,
+            "align_self": null,
+            "border": null,
+            "bottom": null,
+            "display": null,
+            "flex": null,
+            "flex_flow": null,
+            "grid_area": null,
+            "grid_auto_columns": null,
+            "grid_auto_flow": null,
+            "grid_auto_rows": null,
+            "grid_column": null,
+            "grid_gap": null,
+            "grid_row": null,
+            "grid_template_areas": null,
+            "grid_template_columns": null,
+            "grid_template_rows": null,
+            "height": null,
+            "justify_content": null,
+            "justify_items": null,
+            "left": null,
+            "margin": null,
+            "max_height": null,
+            "max_width": null,
+            "min_height": null,
+            "min_width": null,
+            "object_fit": null,
+            "object_position": null,
+            "order": null,
+            "overflow": null,
+            "overflow_x": null,
+            "overflow_y": null,
+            "padding": null,
+            "right": null,
+            "top": null,
+            "visibility": null,
+            "width": null
+          }
+        },
+        "bfb52fe525f048faa5105c88ab913a03": {
+          "model_module": "@jupyter-widgets/controls",
+          "model_name": "DescriptionStyleModel",
+          "model_module_version": "1.5.0",
+          "state": {
+            "_model_module": "@jupyter-widgets/controls",
+            "_model_module_version": "1.5.0",
+            "_model_name": "DescriptionStyleModel",
+            "_view_count": null,
+            "_view_module": "@jupyter-widgets/base",
+            "_view_module_version": "1.2.0",
+            "_view_name": "StyleView",
+            "description_width": ""
+          }
+        },
+        "aa47d713db1c46c9a643f6a21a233bc7": {
+          "model_module": "@jupyter-widgets/controls",
+          "model_name": "HBoxModel",
+          "model_module_version": "1.5.0",
+          "state": {
+            "_dom_classes": [],
+            "_model_module": "@jupyter-widgets/controls",
+            "_model_module_version": "1.5.0",
+            "_model_name": "HBoxModel",
+            "_view_count": null,
+            "_view_module": "@jupyter-widgets/controls",
+            "_view_module_version": "1.5.0",
+            "_view_name": "HBoxView",
+            "box_style": "",
+            "children": [
+              "IPY_MODEL_54b381b8c1d6478b8479924ecbd3b74a",
+              "IPY_MODEL_8b26e527755d4f9db5c9060c1d205f29",
+              "IPY_MODEL_c765bab5343c45038d10d13ca170ef2c"
+            ],
+            "layout": "IPY_MODEL_5156602cb8704e71b193ccf2dfd02d76"
+          }
+        },
+        "54b381b8c1d6478b8479924ecbd3b74a": {
+          "model_module": "@jupyter-widgets/controls",
+          "model_name": "HTMLModel",
+          "model_module_version": "1.5.0",
+          "state": {
+            "_dom_classes": [],
+            "_model_module": "@jupyter-widgets/controls",
+            "_model_module_version": "1.5.0",
+            "_model_name": "HTMLModel",
+            "_view_count": null,
+            "_view_module": "@jupyter-widgets/controls",
+            "_view_module_version": "1.5.0",
+            "_view_name": "HTMLView",
+            "description": "",
+            "description_tooltip": null,
+            "layout": "IPY_MODEL_9f4266b4448241d2a85385dce748d510",
+            "placeholder": "​",
+            "style": "IPY_MODEL_88a2d2ef7b0f4d43a925b4b05ebf481e",
+            "value": "Batches: 100%"
+          }
+        },
+        "8b26e527755d4f9db5c9060c1d205f29": {
+          "model_module": "@jupyter-widgets/controls",
+          "model_name": "FloatProgressModel",
+          "model_module_version": "1.5.0",
+          "state": {
+            "_dom_classes": [],
+            "_model_module": "@jupyter-widgets/controls",
+            "_model_module_version": "1.5.0",
+            "_model_name": "FloatProgressModel",
+            "_view_count": null,
+            "_view_module": "@jupyter-widgets/controls",
+            "_view_module_version": "1.5.0",
+            "_view_name": "ProgressView",
+            "bar_style": "success",
+            "description": "",
+            "description_tooltip": null,
+            "layout": "IPY_MODEL_2ac18ccd20704b7182a43ff8ab6a77d7",
+            "max": 7,
+            "min": 0,
+            "orientation": "horizontal",
+            "style": "IPY_MODEL_79728b02d17f48bc8df6710481f7fc61",
+            "value": 7
+          }
+        },
+        "c765bab5343c45038d10d13ca170ef2c": {
+          "model_module": "@jupyter-widgets/controls",
+          "model_name": "HTMLModel",
+          "model_module_version": "1.5.0",
+          "state": {
+            "_dom_classes": [],
+            "_model_module": "@jupyter-widgets/controls",
+            "_model_module_version": "1.5.0",
+            "_model_name": "HTMLModel",
+            "_view_count": null,
+            "_view_module": "@jupyter-widgets/controls",
+            "_view_module_version": "1.5.0",
+            "_view_name": "HTMLView",
+            "description": "",
+            "description_tooltip": null,
+            "layout": "IPY_MODEL_7879ab76b4fd48358cfb10cb17e99e97",
+            "placeholder": "​",
+            "style": "IPY_MODEL_a88d10e0e9ea48b1a6ff598b7991eff8",
+            "value": " 7/7 [00:04&lt;00:00,  1.40it/s]"
+          }
+        },
+        "5156602cb8704e71b193ccf2dfd02d76": {
+          "model_module": "@jupyter-widgets/base",
+          "model_name": "LayoutModel",
+          "model_module_version": "1.2.0",
+          "state": {
+            "_model_module": "@jupyter-widgets/base",
+            "_model_module_version": "1.2.0",
+            "_model_name": "LayoutModel",
+            "_view_count": null,
+            "_view_module": "@jupyter-widgets/base",
+            "_view_module_version": "1.2.0",
+            "_view_name": "LayoutView",
+            "align_content": null,
+            "align_items": null,
+            "align_self": null,
+            "border": null,
+            "bottom": null,
+            "display": null,
+            "flex": null,
+            "flex_flow": null,
+            "grid_area": null,
+            "grid_auto_columns": null,
+            "grid_auto_flow": null,
+            "grid_auto_rows": null,
+            "grid_column": null,
+            "grid_gap": null,
+            "grid_row": null,
+            "grid_template_areas": null,
+            "grid_template_columns": null,
+            "grid_template_rows": null,
+            "height": null,
+            "justify_content": null,
+            "justify_items": null,
+            "left": null,
+            "margin": null,
+            "max_height": null,
+            "max_width": null,
+            "min_height": null,
+            "min_width": null,
+            "object_fit": null,
+            "object_position": null,
+            "order": null,
+            "overflow": null,
+            "overflow_x": null,
+            "overflow_y": null,
+            "padding": null,
+            "right": null,
+            "top": null,
+            "visibility": null,
+            "width": null
+          }
+        },
+        "9f4266b4448241d2a85385dce748d510": {
+          "model_module": "@jupyter-widgets/base",
+          "model_name": "LayoutModel",
+          "model_module_version": "1.2.0",
+          "state": {
+            "_model_module": "@jupyter-widgets/base",
+            "_model_module_version": "1.2.0",
+            "_model_name": "LayoutModel",
+            "_view_count": null,
+            "_view_module": "@jupyter-widgets/base",
+            "_view_module_version": "1.2.0",
+            "_view_name": "LayoutView",
+            "align_content": null,
+            "align_items": null,
+            "align_self": null,
+            "border": null,
+            "bottom": null,
+            "display": null,
+            "flex": null,
+            "flex_flow": null,
+            "grid_area": null,
+            "grid_auto_columns": null,
+            "grid_auto_flow": null,
+            "grid_auto_rows": null,
+            "grid_column": null,
+            "grid_gap": null,
+            "grid_row": null,
+            "grid_template_areas": null,
+            "grid_template_columns": null,
+            "grid_template_rows": null,
+            "height": null,
+            "justify_content": null,
+            "justify_items": null,
+            "left": null,
+            "margin": null,
+            "max_height": null,
+            "max_width": null,
+            "min_height": null,
+            "min_width": null,
+            "object_fit": null,
+            "object_position": null,
+            "order": null,
+            "overflow": null,
+            "overflow_x": null,
+            "overflow_y": null,
+            "padding": null,
+            "right": null,
+            "top": null,
+            "visibility": null,
+            "width": null
+          }
+        },
+        "88a2d2ef7b0f4d43a925b4b05ebf481e": {
+          "model_module": "@jupyter-widgets/controls",
+          "model_name": "DescriptionStyleModel",
+          "model_module_version": "1.5.0",
+          "state": {
+            "_model_module": "@jupyter-widgets/controls",
+            "_model_module_version": "1.5.0",
+            "_model_name": "DescriptionStyleModel",
+            "_view_count": null,
+            "_view_module": "@jupyter-widgets/base",
+            "_view_module_version": "1.2.0",
+            "_view_name": "StyleView",
+            "description_width": ""
+          }
+        },
+        "2ac18ccd20704b7182a43ff8ab6a77d7": {
+          "model_module": "@jupyter-widgets/base",
+          "model_name": "LayoutModel",
+          "model_module_version": "1.2.0",
+          "state": {
+            "_model_module": "@jupyter-widgets/base",
+            "_model_module_version": "1.2.0",
+            "_model_name": "LayoutModel",
+            "_view_count": null,
+            "_view_module": "@jupyter-widgets/base",
+            "_view_module_version": "1.2.0",
+            "_view_name": "LayoutView",
+            "align_content": null,
+            "align_items": null,
+            "align_self": null,
+            "border": null,
+            "bottom": null,
+            "display": null,
+            "flex": null,
+            "flex_flow": null,
+            "grid_area": null,
+            "grid_auto_columns": null,
+            "grid_auto_flow": null,
+            "grid_auto_rows": null,
+            "grid_column": null,
+            "grid_gap": null,
+            "grid_row": null,
+            "grid_template_areas": null,
+            "grid_template_columns": null,
+            "grid_template_rows": null,
+            "height": null,
+            "justify_content": null,
+            "justify_items": null,
+            "left": null,
+            "margin": null,
+            "max_height": null,
+            "max_width": null,
+            "min_height": null,
+            "min_width": null,
+            "object_fit": null,
+            "object_position": null,
+            "order": null,
+            "overflow": null,
+            "overflow_x": null,
+            "overflow_y": null,
+            "padding": null,
+            "right": null,
+            "top": null,
+            "visibility": null,
+            "width": null
+          }
+        },
+        "79728b02d17f48bc8df6710481f7fc61": {
+          "model_module": "@jupyter-widgets/controls",
+          "model_name": "ProgressStyleModel",
+          "model_module_version": "1.5.0",
+          "state": {
+            "_model_module": "@jupyter-widgets/controls",
+            "_model_module_version": "1.5.0",
+            "_model_name": "ProgressStyleModel",
+            "_view_count": null,
+            "_view_module": "@jupyter-widgets/base",
+            "_view_module_version": "1.2.0",
+            "_view_name": "StyleView",
+            "bar_color": null,
+            "description_width": ""
+          }
+        },
+        "7879ab76b4fd48358cfb10cb17e99e97": {
+          "model_module": "@jupyter-widgets/base",
+          "model_name": "LayoutModel",
+          "model_module_version": "1.2.0",
+          "state": {
+            "_model_module": "@jupyter-widgets/base",
+            "_model_module_version": "1.2.0",
+            "_model_name": "LayoutModel",
+            "_view_count": null,
+            "_view_module": "@jupyter-widgets/base",
+            "_view_module_version": "1.2.0",
+            "_view_name": "LayoutView",
+            "align_content": null,
+            "align_items": null,
+            "align_self": null,
+            "border": null,
+            "bottom": null,
+            "display": null,
+            "flex": null,
+            "flex_flow": null,
+            "grid_area": null,
+            "grid_auto_columns": null,
+            "grid_auto_flow": null,
+            "grid_auto_rows": null,
+            "grid_column": null,
+            "grid_gap": null,
+            "grid_row": null,
+            "grid_template_areas": null,
+            "grid_template_columns": null,
+            "grid_template_rows": null,
+            "height": null,
+            "justify_content": null,
+            "justify_items": null,
+            "left": null,
+            "margin": null,
+            "max_height": null,
+            "max_width": null,
+            "min_height": null,
+            "min_width": null,
+            "object_fit": null,
+            "object_position": null,
+            "order": null,
+            "overflow": null,
+            "overflow_x": null,
+            "overflow_y": null,
+            "padding": null,
+            "right": null,
+            "top": null,
+            "visibility": null,
+            "width": null
+          }
+        },
+        "a88d10e0e9ea48b1a6ff598b7991eff8": {
+          "model_module": "@jupyter-widgets/controls",
+          "model_name": "DescriptionStyleModel",
+          "model_module_version": "1.5.0",
+          "state": {
+            "_model_module": "@jupyter-widgets/controls",
+            "_model_module_version": "1.5.0",
+            "_model_name": "DescriptionStyleModel",
+            "_view_count": null,
+            "_view_module": "@jupyter-widgets/base",
+            "_view_module_version": "1.2.0",
+            "_view_name": "StyleView",
+            "description_width": ""
+          }
+        }
+      }
+    },
+    "accelerator": "GPU"
+  },
+  "nbformat": 4,
+  "nbformat_minor": 0
+}
